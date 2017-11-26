@@ -1,0 +1,207 @@
+#include "mbed.h"
+#include "C12832.h"
+#include "OdinWiFiInterface.h"
+#include "http_request.h"
+#include "MMA7660.h"
+#include "CCS811.h"
+#include "MMA7660.h"
+
+#define USE_I2C_2V8
+
+#include "Sht31.h"
+//#include "string.h"
+#include<string.h>
+
+// GLOBAL VARIABLES HERE
+
+
+OdinWiFiInterface wifi;
+InterruptIn buttonOn(PF_2);
+InterruptIn buttonOff(PG_4);
+volatile int count = 0;
+volatile bool clickedOn = false;
+volatile bool clickedOff = false;
+
+
+C12832 lcd(PE_14, PE_12, PD_12, PD_11, PE_9); //LCD: MOSI, SCK, RESET, A0, nCS
+Sht31 sht31(PF_0, PF_1); //TEMP SENSOR: I2C_SDA, I2C_SCL
+MMA7660 MMA(PF_0, PF_1); //ACCELEROMETER: I2C_SDA, I2C_SCL
+CCS811  air_sensor(PF_0, PF_1);
+
+// FUNCTION DEFINTIONS HERE
+
+void lcd_print(const char* message) {
+    lcd.cls();
+    lcd.locate(0, 3);
+    lcd.printf(message);
+}
+
+void button_clicked_ON() {
+    clickedOn = true;
+    count += 1;
+    //char val[32];
+    //sprintf(val, "# of clicks = %d", count);
+    //lcd_print(val);
+}
+
+/*
+void button_clicked_OFF() {
+    clickedOff = true;
+    count += 1;
+    char val[32];
+    //sprintf(val, "# of clicks = %d", count);
+    //lcd_print(val);
+}
+*/
+
+int main() {
+
+    // MAIN CODE HERE
+
+    lcd_print("Connecting...");
+    int ret = wifi.connect(MBED_CONF_APP_WIFI_SSID, MBED_CONF_APP_WIFI_PASSWORD, NSAPI_SECURITY_WPA_WPA2);
+    if (ret != 0) {
+        lcd_print("Connection error.");
+        return -1;
+    }
+    lcd_print("Successfully connected!");
+
+    buttonOn.rise(&button_clicked_ON);
+    //buttonOff.rise(&button_clicked_OFF);
+
+    air_sensor.init();
+    uint16_t eco2, tvoc;
+
+
+    while(true) {
+        // WHILE LOOP CODE HERE
+
+        if(clickedOn) {
+
+            lcd_print("pressed!");
+
+            float t = 0;
+            float h = 0;
+
+            //lcd.locate(0,3);
+            //lcd.printf("[TEMP/HUM]");
+
+            //lcd_print("Here1");
+
+            char values[2000] = "";
+            char t_values[400] = "";
+            char h_values[400] = "";
+            char x_values[200] = "";
+            char y_values[200] = "";
+            char z_values[200] = "";
+            char a_values[400] = "";
+
+            int i = 0;
+
+            lcd_print("qwerty");
+            while(i<20)
+            {
+
+                //buttonOff.rise(&button_clicked_OFF);
+                //if(clickedOff){
+                  //  break;
+                    //}
+
+
+
+                char istr[5] = " ";
+                sprintf(istr, " %d", i);
+
+                lcd_print(istr);
+                char t_str[5] = "";
+                char h_str[5] = "";
+                char x_str[5] = "";
+                char y_str[5] = "";
+                char z_str[5] = "";
+
+                char a_str[5] = "";
+
+                t = sht31.readTemperature();
+                h = sht31.readHumidity();
+                float x = MMA.x();
+                float y = MMA.y();
+                float z = MMA.z();
+
+                air_sensor.readData(&eco2, &tvoc);
+                float a = eco2;
+
+
+                sprintf (t_str, " %3.1f", t);          // space then number
+                sprintf (h_str, " %3.1f", h);
+                sprintf (x_str, " %3.1f", x);
+                sprintf (y_str, " %3.1f", y);
+                sprintf (z_str, " %3.1f", z);
+
+                sprintf (a_str, " %3.1f", a);
+
+                if(i==0){
+                    strcpy(t_values, t_str);
+                    strcpy(h_values, h_str);
+                    strcpy(x_values, x_str);
+                    strcpy(y_values, y_str);
+                    strcpy(z_values, z_str);
+
+                    strcpy(a_values, a_str);
+                    }
+                else{
+                    strcat(t_values, t_str);
+                    strcat(h_values, h_str);
+                    strcat(x_values, x_str);
+                    strcat(y_values, y_str);
+                    strcat(z_values, z_str);
+
+                    strcat(a_values, a_str);
+                    }
+                i++;
+
+
+            }
+            lcd_print("I'm out");
+            strcat(values, t_values);
+            strcat(values, ",");
+            strcat(values, h_values);
+            strcat(values, ",");
+            strcat(values, x_values);
+            strcat(values, ",");
+            strcat(values, y_values);
+            strcat(values, ",");
+            strcat(values, z_values);
+            strcat(values, ",");
+
+            strcat(values, a_values);
+
+            lcd_print("YEAH");
+
+
+
+            //char val[140];
+            //char event_name[] = "Button Clicked";
+            NetworkInterface* net = &wifi;
+            //sprintf(val, "%3.2f %3.2f", t, h);
+            //lcd_print(val);
+
+            lcd_print("Here2");
+            HttpRequest* request = new HttpRequest(net, HTTP_PUT, "http://10.25.1.54:5000");
+            lcd_print("Here3");
+            request->set_header("Content-Type", "application/json");
+            lcd_print("Here4");
+
+            HttpResponse* response = request->send(values, strlen(values));
+            lcd_print("Here5");
+
+            lcd.locate(0,15);
+            lcd.printf("TEMP:%3.2fC, HUM:%3.2f%%", t, h); // Print to LCD values
+
+            delete request;
+
+            clickedOn = false;
+        }
+
+    }
+
+}
